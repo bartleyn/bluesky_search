@@ -19,31 +19,52 @@ _ANSI_ESCAPE = re.compile(
     r'|[‪-‮⁦-⁩‏؜]'  # Unicode bidi/RTL overrides
 )
 
+import getpass
+
 try:
     from atproto import Client
     from atproto_client.exceptions import AtProtocolError
 except ImportError:
-    print("Missing dependency: pip3 install atproto", file=sys.stderr)
+    print("Missing dependency: pip3 install atproto keyring", file=sys.stderr)
     sys.exit(1)
+
+try:
+    import keyring
+    import keyring.errors
+    _KEYRING_AVAILABLE = True
+except ImportError:
+    _KEYRING_AVAILABLE = False
 
 TOOLS_DIR = Path.home() / ".claude" / "tools"
 SESSION_FILE = TOOLS_DIR / ".bluesky_session"
 CREDS_FILE = Path(os.environ.get("BLUESKY_CREDS_FILE", TOOLS_DIR / ".bluesky_creds"))
+KEYRING_SERVICE = "bartleyn.bluesky-search"
 
 _SAFE_HANDLE = re.compile(r'^[a-zA-Z0-9._:-]+$')
 _SAFE_RKEY  = re.compile(r'^[a-zA-Z0-9._~-]+$')
 
 
 def _read_creds():
-    """Read atmo_acct + app password from the credentials file."""
+    """Read account + app password. Tries keyring first, falls back to creds file."""
+    if _KEYRING_AVAILABLE:
+        try:
+            handle = keyring.get_password(KEYRING_SERVICE, "atmosphere_account")
+            password = keyring.get_password(KEYRING_SERVICE, "app_password")
+            if handle and password:
+                return handle, password
+        except keyring.errors.KeyringError:
+            pass
+
+    # Fall back to plaintext file (legacy / non-interactive environments)
     if not CREDS_FILE.exists():
         print(
-            f"Credentials file not found: {CREDS_FILE}\n"
-            "Create it with:\n"
+            "No credentials found. Run:\n"
+            "  python3 bluesky_search.py setup\n\n"
+            "Or create a credentials file at:\n"
+            f"  {CREDS_FILE}\n"
             "  ATMOSPHERE_ACCOUNT=you.bsky.social\n"
             "  BLUESKY_APP_PASSWORD=xxxx-xxxx-xxxx-xxxx\n"
-            "Then: chmod 600 ~/.claude/tools/.bluesky_creds\n\n"
-            "Generate an app password at: Bluesky → Settings → Privacy and Security → App Passwords",
+            "  chmod 600 ~/.claude/tools/.bluesky_creds",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -73,7 +94,36 @@ def _read_creds():
     if not handle or not password:
         print("Credentials file must contain ATMOSPHERE_ACCOUNT and BLUESKY_APP_PASSWORD", file=sys.stderr)
         sys.exit(1)
+    if _KEYRING_AVAILABLE:
+        print("Tip: run `bluesky_search.py setup` to migrate credentials to the system Keychain.", file=sys.stderr)
     return handle, password
+
+
+def cmd_setup(args):
+    if not _KEYRING_AVAILABLE:
+        print("keyring package not installed. Run: pip3 install keyring", file=sys.stderr)
+        sys.exit(1)
+
+    if args.remove:
+        try:
+            keyring.delete_password(KEYRING_SERVICE, "atmosphere_account")
+            keyring.delete_password(KEYRING_SERVICE, "app_password")
+            print("Credentials removed from Keychain.")
+        except keyring.errors.PasswordDeleteError:
+            print("No credentials found in Keychain.")
+        return
+
+    print("Store Bluesky credentials in the system Keychain.")
+    print("Generate an app password at: Bluesky → Settings → Privacy and Security → App Passwords\n")
+    handle = input("Atmosphere account (e.g. you.bsky.social): ").strip()
+    password = getpass.getpass("App password: ")
+    if not handle or not password:
+        print("Account and password are required.", file=sys.stderr)
+        sys.exit(1)
+    keyring.set_password(KEYRING_SERVICE, "atmosphere_account", handle)
+    keyring.set_password(KEYRING_SERVICE, "app_password", password)
+    print(f"\nCredentials stored in Keychain under service '{KEYRING_SERVICE}'.")
+    print("To remove them later: bluesky_search.py setup --remove")
 
 
 def load_client():
@@ -345,8 +395,12 @@ Examples:
     fp.add_argument("--logout-after", action="store_true", help="Prompt to clear session when done")
     fp.set_defaults(func=cmd_feed)
 
-    lp = sub.add_parser("logout", help="Clear cached session")
+    lp = sub.add_parser("logout", help="Clear cached session token")
     lp.set_defaults(func=cmd_logout)
+
+    setp = sub.add_parser("setup", help="Store credentials in system Keychain")
+    setp.add_argument("--remove", action="store_true", help="Remove credentials from Keychain")
+    setp.set_defaults(func=cmd_setup)
 
     args = parser.parse_args()
     args.func(args)

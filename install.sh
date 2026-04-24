@@ -13,9 +13,9 @@ if ! command -v python3 &>/dev/null; then
   exit 1
 fi
 
-if ! python3 -c "import atproto" &>/dev/null; then
-  echo "Installing atproto Python package..."
-  pip3 install --quiet atproto
+if ! python3 -c "import atproto" &>/dev/null || ! python3 -c "import keyring" &>/dev/null; then
+  echo "Installing Python dependencies..."
+  pip3 install --quiet atproto keyring
 fi
 
 # Create directories
@@ -27,17 +27,16 @@ chmod +x "$TOOLS_DIR/bluesky_search.py"
 ln -sf "$REPO_DIR/skills/bluesky-search/SKILL.md" "$SKILLS_DIR/SKILL.md"
 
 echo ""
-echo "Installed. One more step — create your credentials file:"
+echo "Installed. One more step — store your credentials:"
 echo ""
 echo "  1. Go to Bluesky → Settings → Privacy and Security → App Passwords"
 echo "  2. Create a new app password (name it 'claude-tool' or similar)"
 echo "  3. Run:"
 echo ""
-echo "     cat > $TOOLS_DIR/.bluesky_creds << 'EOF'"
-echo "     ATMOSPHERE_ACCOUNT=you.bsky.social"
-echo "     BLUESKY_APP_PASSWORD=xxxx-xxxx-xxxx-xxxx"
-echo "     EOF"
-echo "     chmod 600 $TOOLS_DIR/.bluesky_creds"
+echo "     python3 ~/.claude/tools/bluesky_search.py setup"
+echo ""
+echo "This stores your credentials in the system Keychain (not a plaintext file)."
+echo "To remove them later: python3 ~/.claude/tools/bluesky_search.py setup --remove"
 echo ""
 echo "Then use /bluesky-search in Claude Code, or run:"
 echo "  python3 ~/.claude/tools/bluesky_search.py search \"your query\""
