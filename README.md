@@ -15,7 +15,7 @@ git clone https://github.com/bartleyn/bluesky_search ~/.claude/plugins/bluesky-s
 2. Create a credentials file:
    ```bash
    cat > ~/.claude/tools/.bluesky_creds << 'EOF'
-   BLUESKY_HANDLE=you.bsky.social
+   ATMOSPHERE_ACCOUNT=you.bsky.social
    BLUESKY_APP_PASSWORD=xxxx-xxxx-xxxx-xxxx
    EOF
    chmod 600 ~/.claude/tools/.bluesky_creds
