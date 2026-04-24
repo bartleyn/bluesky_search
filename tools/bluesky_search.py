@@ -9,8 +9,15 @@ import argparse
 from pathlib import Path
 from datetime import datetime, timezone
 
-# Matches ANSI/VT escape sequences — strips them before rendering untrusted content
-_ANSI_ESCAPE = re.compile(r'\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\))')
+# Strips ANSI/VT escapes, 8-bit C1 controls, and Unicode bidi override characters
+# from untrusted content before terminal output.
+_ANSI_ESCAPE = re.compile(
+    r'\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\))'  # ESC sequences
+    r'|\x9b[0-?]*[ -/]*[@-~]'   # 8-bit CSI (equivalent to ESC [)
+    r'|[\x80-\x9f]'             # remaining C1 control codes
+    r'|[\x07\x08\x0c]'          # BEL, BS, FF
+    r'|[‪-‮⁦-⁩‏؜]'  # Unicode bidi/RTL overrides
+)
 
 try:
     from atproto import Client
@@ -116,7 +123,7 @@ def fmt_time(iso):
         dt = datetime.fromisoformat(iso.replace("Z", "+00:00"))
         return dt.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     except Exception:
-        return iso
+        return _sanitize(iso)  # sanitize raw fallback before terminal output
 
 
 def _sanitize(s):
@@ -132,8 +139,10 @@ def fmt_post(post, brief=False):
     record = post.record
     text = _sanitize(getattr(record, "text", "") or "")
     ts = fmt_time(getattr(record, "created_at", "") or "")
-    uri = post.uri or ""
+    uri = _sanitize(post.uri or "")
     rkey = uri.split("/")[-1] if uri else ""
+    if rkey and not _SAFE_RKEY.match(rkey):
+        rkey = ""
     url = f"https://bsky.app/profile/{atmo_acct}/post/{rkey}" if rkey else uri
 
     name_line = f"{display} (@{atmo_acct})" if display else f"@{atmo_acct}"
@@ -323,8 +332,8 @@ Examples:
 
     tp = sub.add_parser("thread", help="Fetch a full thread by URL or AT URI")
     tp.add_argument("url")
-    tp.add_argument("--depth", type=int, default=8)
-    tp.add_argument("--parents", type=int, default=10)
+    tp.add_argument("--depth", type=lambda x: min(max(1, int(x)), 20), default=8)
+    tp.add_argument("--parents", type=lambda x: min(max(1, int(x)), 20), default=10)
     tp.add_argument("--brief", action="store_true", help="Compact output (one line per post)")
     tp.add_argument("--logout-after", action="store_true", help="Prompt to clear session when done")
     tp.set_defaults(func=cmd_thread)
