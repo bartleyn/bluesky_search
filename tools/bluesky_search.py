@@ -178,7 +178,7 @@ def url_to_at_uri(url):
     if not _SAFE_HANDLE.match(atmo_acct) or not _SAFE_RKEY.match(rkey):
         print(f"URL contains unexpected characters: {url}", file=sys.stderr)
         sys.exit(1)
-    return f"at://{handle}/app.bsky.feed.post/{rkey}"
+    return f"at://{atmo_acct}/app.bsky.feed.post/{rkey}"
 
 
 def print_thread_node(node, indent=0, max_depth=10, brief=False):
